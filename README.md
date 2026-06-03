@@ -171,6 +171,7 @@ Arrays are aligned row-for-row by `labels`, so you can build a per-nucleus table
 ├── main.py                       # CLI: discovery + per-image step orchestration
 ├── config.yaml                   # all pipeline parameters
 ├── requirements.txt
+├── run_3d_segmentation.lsf       # Example script for running 3D (or 2D) segmentation/pipeline on the CCHMC Cluster
 └── src/image_processing/
     ├── io.py                     # versatile multi-format reader → canonical CZYX
     ├── directory_walker.py       # recursive, output-aware image discovery
