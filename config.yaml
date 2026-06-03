@@ -1,0 +1,69 @@
+# =============================================================================
+# Confocal image-processing pipeline — configuration
+# =============================================================================
+# Edit the values below for your dataset. Every step reads from this file; the
+# CLI can override the segmentation mode with --seg-mode.
+
+# ---------------------------------------------------------------------------
+# Input
+# ---------------------------------------------------------------------------
+input:
+  directory: ./data            # root folder to search for microscope images
+  recursive: true              # descend into sub-directories
+  file_types:                  # extensions to treat as input images
+    - .nd2
+    - .tif
+    - .tiff
+    - .ome.tif
+    - .oir
+    - .czi
+    - .lif
+
+# ---------------------------------------------------------------------------
+# Channel layout (0-based indices into the image's channel axis)
+# ---------------------------------------------------------------------------
+channels:
+  dapi_index: 0                # nuclear (DAPI) channel — used for segmentation
+  has_cyto: false              # is there a cytoplasm/membrane channel?
+  cyto_index: 1                # its index (used only when has_cyto + use_cyto)
+  marker_channels: [2, 3]      # channels to quantify in intensity extraction
+
+# ---------------------------------------------------------------------------
+# Segmentation (Cellpose-SAM)
+# ---------------------------------------------------------------------------
+segmentation:
+  mode: 2d                     # 2d | 3d | null. null/2d → 2-D on the DAPI MIP.
+                               # 3d requires z-stack inputs (errors on MIPs).
+  use_cyto: false              # pass DAPI + cyto together to Cellpose (2-channel)
+  pretrained_model: null       # null → Cellpose-SAM (cpsam). Set a path to load a
+                               # custom fine-tuned model. Built-in model-type names
+                               # ('cyto', 'nuclei', ...) no longer apply — Cellpose-SAM
+                               # is a single, channel-order-invariant model.
+
+  exclude_brightest_percentile: 99.9   # clip pixels above this percentile pre-segmentation
+  flow_threshold: 0.4          # ↑ to keep more masks, ↓ to remove ill-defined ones
+  cellprob_threshold: 0.0      # ↓ to detect dimmer nuclei, ↑ to be stricter
+  min_mask_size: 15            # absolute floor on nucleus size (px in 2-D, voxels in 3-D)
+
+  # 3-D only
+  anisotropy: null             # null → pixel_size_z / pixel_size_x from metadata (default 2.0)
+  batch_size: 8
+
+  # Adaptive post-segmentation filtering (applied after the hard min floor)
+  adaptive_size_filter: true   # remove masks below exp(median_log - k * IQR_upper) of log(areas)
+  adaptive_size_k: 2.5         # ↑ keeps more small masks
+  adaptive_dapi_filter: false  # also drop masks with anomalously low mean DAPI
+  adaptive_dapi_k: 2.5
+
+# ---------------------------------------------------------------------------
+# Intensity extraction
+# ---------------------------------------------------------------------------
+intensity:
+  normalize_by_dapi: true      # also store marker / DAPI per-nucleus ratios
+
+# ---------------------------------------------------------------------------
+# Visualization / QC figures
+# ---------------------------------------------------------------------------
+visualization:
+  dpi: 300                          # publication-quality figure resolution
+  overlay_clip_percentile: [1, 99]  # DAPI display range for segmentation overlays
