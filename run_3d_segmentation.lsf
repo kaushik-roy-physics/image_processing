@@ -24,14 +24,15 @@ set -e
 # --- HPC ENVIRONMENT SETUP ---
 echo "Loading modules..."
 module load python3/3.10.7
-# cuda/12.8: newest available; cu126 PyTorch wheels require driver >= 12.6.
-# Fallback: module load cuda/12.2  +  change index URL below to .../cu121
+# cuda/12.8 needed for Blackwell (sm_120): cu128 PyTorch wheels are the first
+# to ship Blackwell kernels. Do NOT drop to cu126/cu121 on this node — those
+# wheels only go up to sm_90 and the GPU will be unusable.
 module load cuda/12.8
 
 # --- PATHS (EDIT THESE) ---
 PIPELINE_DIR=/data/Warmflash/pipelines/confocal_image_processing  # holds main.py + config.yaml
 CONFIG="$PIPELINE_DIR/config.yaml"        # input.directory inside this file selects the data
-VENV_DIR=/scratch/roy2nm/cellpose_venv    # venv on scratch
+VENV_DIR=/scratch/roy2nm/cellpose_venv_cu128    # fresh venv on scratch (clean cu128 build)
 LOG_DIR=/scratch/roy2nm/logs
 
 cd "$PIPELINE_DIR"
@@ -48,9 +49,14 @@ source "$VENV_DIR/bin/activate"
 echo "Installing Python packages..."
 pip install --upgrade pip --quiet
 
-# PyTorch with CUDA 12.6 support (compatible with cuda/12.8 driver).
+# PyTorch with CUDA 12.8 support. cu128 wheels include sm_120 (Blackwell)
+# kernels; cu126 and earlier do NOT and the GPU comes back as "not compatible".
+# Force-reinstall so a stale cu126 torch already in the venv gets replaced
+# (an unpinned `pip install torch` would otherwise leave the bad wheel in place).
+pip uninstall -y torch torchvision 2>/dev/null || true
 pip install torch torchvision \
-    --index-url https://download.pytorch.org/whl/cu126 \
+    --index-url https://download.pytorch.org/whl/cu128 \
+    --force-reinstall \
     --quiet
 
 pip install -r "$PIPELINE_DIR/requirements.txt" --quiet
@@ -60,11 +66,19 @@ echo "Verifying PyTorch GPU access..."
 python3 -c "
 import torch
 print(f'PyTorch version : {torch.__version__}')
+print(f'Built for CUDA  : {torch.version.cuda}')
 print(f'CUDA available  : {torch.cuda.is_available()}')
 if not torch.cuda.is_available():
     raise RuntimeError('No GPU detected — aborting.')
 print(f'GPU             : {torch.cuda.get_device_name(0)}')
+cc = torch.cuda.get_device_capability(0)
+print(f'Compute cap.    : sm_{cc[0]}{cc[1]}')
 print(f'VRAM            : {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB')
+# is_available() stays True even on an incompatible build — the failure only
+# shows up on a real kernel launch, so run one to fail fast before the pipeline.
+x = torch.randn(1024, 1024, device='cuda')
+torch.mm(x, x); torch.cuda.synchronize()
+print('GPU compute     : OK')
 "
 
 # --- EXECUTION ---
